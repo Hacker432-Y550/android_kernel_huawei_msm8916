@@ -20,13 +20,10 @@
 #include <linux/ftrace.h>
 #include <linux/mm.h>
 #include <linux/msm_adreno_devfreq.h>
-#include <linux/state_notifier.h>
 #include <asm/cacheflush.h>
 #include <soc/qcom/scm.h>
+#include <linux/powersuspend.h>
 #include "governor.h"
-#ifdef CONFIG_ADRENO_IDLER
-#include "adreno_idler.h"
-#endif
 
 static DEFINE_SPINLOCK(tz_lock);
 
@@ -59,41 +56,13 @@ static DEFINE_SPINLOCK(tz_lock);
 
 #define TAG "msm_adreno_tz: "
 
-/* Boolean to detect if pm has entered suspend mode */
-static bool suspended;
-
 struct msm_adreno_extended_profile *partner_gpu_profile;
 static void do_partner_start_event(struct work_struct *work);
 static void do_partner_stop_event(struct work_struct *work);
 static void do_partner_suspend_event(struct work_struct *work);
 static void do_partner_resume_event(struct work_struct *work);
-
-/* Trap into the TrustZone, and call funcs there. */
-static int __secure_tz_reset_entry2(unsigned int *scm_data, u32 size_scm_data,
-					bool is_64)
-{
-	int ret;
-	/* sync memory before sending the commands to tz*/
-	__iowmb();
-
-	if (!is_64) {
-		spin_lock(&tz_lock);
-		ret = scm_call_atomic2(SCM_SVC_IO, TZ_RESET_ID, scm_data[0],
-					scm_data[1]);
-		spin_unlock(&tz_lock);
-	} else {
-		if (is_scm_armv8()) {
-			struct scm_desc desc = {0};
-			desc.arginfo = 0;
-			ret = scm_call2(SCM_SIP_FNID(SCM_SVC_DCVS,
-					 TZ_RESET_ID_64), &desc);
-		} else {
-			ret = scm_call(SCM_SVC_DCVS, TZ_RESET_ID_64, scm_data,
-				size_scm_data, NULL, 0);
-		}
-	}
-	return ret;
-}
+/* Boolean to detect if pm has entered suspend mode */
+static bool suspended = false;
 
 static int __secure_tz_update_entry3(unsigned int *scm_data, u32 size_scm_data,
 					int *val, u32 size_val, bool is_64)
@@ -176,6 +145,10 @@ static int tz_init(struct devfreq_msm_adreno_tz_data *priv,
 	return ret;
 }
 
+#ifdef CONFIG_ADRENO_IDLER
+extern int adreno_idler(struct devfreq_dev_status stats, struct devfreq *devfreq,
+		 unsigned long *freq);
+#endif
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 				u32 *flag)
 {
@@ -199,19 +172,19 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	}
 
 	*freq = stats.current_frequency;
+	*flag = 0;
 
 	/*
 	 * Force to use & record as min freq when system has
 	 * entered pm-suspend or screen-off state.
 	 */
-	if (suspended || state_suspended) {
+	if (suspended || power_suspended) {
 		*freq = devfreq->profile->freq_table[devfreq->profile->max_state - 1];
 		return 0;
 	}
 
 #ifdef CONFIG_ADRENO_IDLER
-	if (adreno_idler_active &&
-			adreno_idler(stats, devfreq, freq)) {
+	if (adreno_idler(stats, devfreq, freq)) {
 		/* adreno_idler has asked to bail out now */
 		return 0;
 	}
@@ -387,14 +360,15 @@ static int tz_suspend(struct devfreq *devfreq)
 	struct devfreq_msm_adreno_tz_data *priv = devfreq->data;
 	struct devfreq_dev_profile *profile = devfreq->profile;
 	unsigned long freq;
-        unsigned int scm_data[2] = {0, 0};
-        __secure_tz_reset_entry2(scm_data, sizeof(scm_data), priv->is_64);
 
 	suspended = true;
 
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;
-	
+	priv->bus.total_time = 0;
+	priv->bus.gpu_time = 0;
+	priv->bus.ram_time = 0;
+
 	freq = profile->freq_table[profile->max_state - 1];
 
 	return profile->target(devfreq->dev.parent, &freq, 0);
