@@ -121,6 +121,9 @@ ifeq ($(CONFIG_MACH_CHE1_L04),y)
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-che1-l04_va.dtb \
 	msm8916-qrd-che1-l04_vb.dtb
 endif
+ifeq ($(CONFIG_MACH_Y550_L01),y)
+dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-y550_l01.dtb
+endif
 else
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-cdp.dtb \
 	msm8916-cdp-smb1360.dtb \
