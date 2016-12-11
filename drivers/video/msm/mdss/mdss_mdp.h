@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,7 +30,6 @@
 #define MDSS_MDP_CURSOR_WIDTH 64
 #define MDSS_MDP_CURSOR_HEIGHT 64
 #define MDSS_MDP_CURSOR_SIZE (MDSS_MDP_CURSOR_WIDTH*MDSS_MDP_CURSOR_WIDTH*4)
-#define MDSS_MDP_PIXEL_RAM_SIZE (50 * 1024)
 
 #define PHASE_STEP_SHIFT	21
 #define MAX_LINE_BUFFER_WIDTH	2048
@@ -47,7 +46,6 @@
 #define MDP_MIN_VBP		4
 #define MDP_MIN_FETCH		9
 #define MAX_FREE_LIST_SIZE	12
-#define OVERLAY_MAX		10
 
 #define C3_ALPHA	3	/* alpha */
 #define C2_R_Cr		2	/* R/Cr */
@@ -68,10 +66,6 @@
 #define PERF_CALC_PIPE_APPLY_CLK_FUDGE	BIT(0)
 #define PERF_CALC_PIPE_SINGLE_LAYER	BIT(1)
 #define PERF_CALC_PIPE_CALC_SMP_SIZE	BIT(2)
-
-#define PERF_SINGLE_PIPE_BW_FLOOR 1200000000
-#define CURSOR_PIPE_LEFT 0
-#define CURSOR_PIPE_RIGHT 1
 
 enum mdss_mdp_perf_state_type {
 	PERF_SW_COMMIT_STATE = 0,
@@ -100,7 +94,6 @@ enum mdss_mdp_pipe_type {
 	MDSS_MDP_PIPE_TYPE_VIG,
 	MDSS_MDP_PIPE_TYPE_RGB,
 	MDSS_MDP_PIPE_TYPE_DMA,
-	MDSS_MDP_PIPE_TYPE_CURSOR,
 };
 
 enum mdss_mdp_block_type {
@@ -113,14 +106,10 @@ enum mdss_mdp_block_type {
 };
 
 enum mdss_mdp_csc_type {
-	MDSS_MDP_CSC_YUV2RGB_601L,
-	MDSS_MDP_CSC_YUV2RGB_601FR,
-	MDSS_MDP_CSC_YUV2RGB_709L,
-	MDSS_MDP_CSC_RGB2YUV_601L,
-	MDSS_MDP_CSC_RGB2YUV_601FR,
-	MDSS_MDP_CSC_RGB2YUV_709L,
-	MDSS_MDP_CSC_YUV2YUV,
 	MDSS_MDP_CSC_RGB2RGB,
+	MDSS_MDP_CSC_YUV2RGB,
+	MDSS_MDP_CSC_RGB2YUV,
+	MDSS_MDP_CSC_YUV2YUV,
 	MDSS_MDP_MAX_CSC
 };
 
@@ -128,18 +117,6 @@ enum mdp_wfd_blk_type {
 	MDSS_MDP_WFD_SHARED = 0,
 	MDSS_MDP_WFD_INTERFACE,
 	MDSS_MDP_WFD_DEDICATED,
-};
-
-enum mdss_mdp_reg_bus_cfg {
-	REG_CLK_CFG_OFF,
-	REG_CLK_CFG_LOW,
-	REG_CLK_CFG_HIGH,
-};
-
-enum mdss_mdp_panic_signal_type {
-	MDSS_MDP_PANIC_NONE,
-	MDSS_MDP_PANIC_COMMON_REG_CFG,
-	MDSS_MDP_PANIC_PER_PIPE_CFG,
 };
 
 /**
@@ -153,6 +130,12 @@ enum mdss_mdp_panic_signal_type {
 enum mdp_commit_stage_type {
 	MDP_COMMIT_STAGE_SETUP_DONE,
 	MDP_COMMIT_STAGE_READY_FOR_KICKOFF,
+};
+
+enum mdss_mdp_reg_bus_cfg {
+	REG_CLK_CFG_OFF,
+	REG_CLK_CFG_LOW,
+	REG_CLK_CFG_HIGH,
 };
 
 struct mdss_mdp_ctl;
@@ -170,18 +153,12 @@ enum mdss_mdp_wb_ctl_type {
 	MDSS_MDP_WB_CTL_TYPE_LINE
 };
 
-enum mdss_mdp_bw_vote_mode {
-	MDSS_MDP_BW_MODE_SINGLE_LAYER,
-	MDSS_MDP_BW_MODE_MAX
-};
-
 struct mdss_mdp_perf_params {
 	u64 bw_overlap;
 	u64 bw_prefill;
 	u32 prefill_bytes;
 	u64 bw_ctl;
 	u32 mdp_clk_rate;
-	DECLARE_BITMAP(bw_vote_mode, MDSS_MDP_BW_MODE_MAX);
 };
 
 struct mdss_mdp_ctl {
@@ -189,7 +166,7 @@ struct mdss_mdp_ctl {
 	char __iomem *base;
 	char __iomem *wb_base;
 	u32 ref_cnt;
-	int power_state;
+	int power_on;
 
 	u32 intf_num;
 	u32 intf_type;
@@ -224,23 +201,18 @@ struct mdss_mdp_ctl {
 	struct mdss_mdp_mixer *mixer_left;
 	struct mdss_mdp_mixer *mixer_right;
 	struct mutex lock;
-	struct mutex offlock;
 	struct mutex *shared_lock;
 	spinlock_t spin_lock;
 
 	struct mdss_panel_data *panel_data;
 	struct mdss_mdp_vsync_handler vsync_handler;
-	struct mdss_mdp_vsync_handler recover_underrun_handler;
-	struct work_struct recover_work;
-	struct work_struct remove_underrun_handler;
 
 	struct mdss_rect roi;
 	struct mdss_rect roi_bkup;
 	u8 roi_changed;
-	u8 valid_roi;
 
 	int (*start_fnc) (struct mdss_mdp_ctl *ctl);
-	int (*stop_fnc) (struct mdss_mdp_ctl *ctl, int panel_power_state);
+	int (*stop_fnc) (struct mdss_mdp_ctl *ctl);
 	int (*prepare_fnc) (struct mdss_mdp_ctl *ctl, void *arg);
 	int (*display_fnc) (struct mdss_mdp_ctl *ctl, void *arg);
 	int (*wait_fnc) (struct mdss_mdp_ctl *ctl, void *arg);
@@ -252,13 +224,12 @@ struct mdss_mdp_ctl {
 					struct mdss_mdp_vsync_handler *);
 	int (*config_fps_fnc) (struct mdss_mdp_ctl *ctl,
 				struct mdss_mdp_ctl *sctl, int new_fps);
-	int (*restore_fnc) (struct mdss_mdp_ctl *ctl);
 
 	struct blocking_notifier_head notifier_head;
 
 	void *priv_data;
 	u32 wb_type;
-	u32 prg_fet;
+	bool prg_fet;
 };
 
 struct mdss_mdp_mixer {
@@ -311,11 +282,9 @@ struct mdss_mdp_plane_sizes {
 
 struct mdss_mdp_img_data {
 	dma_addr_t addr;
-	unsigned long len;
-	u32 offset;
+	u32 len;
 	u32 flags;
 	int p_need;
-	bool mapped;
 	struct file *srcp_file;
 	struct ion_handle *srcp_ihdl;
 };
@@ -369,6 +338,7 @@ struct mdss_ad_info {
 	u32 last_bl;
 	u32 bl_data;
 	u32 calc_itr;
+	uint32_t bl_bright_shift;
 	uint32_t bl_lin[AD_BL_LIN_LEN];
 	uint32_t bl_lin_inv[AD_BL_LIN_LEN];
 	uint32_t bl_att_lut[AD_BL_ATT_LUT_LEN];
@@ -445,6 +415,7 @@ struct mdss_mdp_pipe {
 	u8 blend_op;
 	u8 overfetch_disable;
 	u32 transp;
+	u8 has_buf;
 	u32 bg_color;
 	u32 hscl_en;
 
@@ -454,7 +425,6 @@ struct mdss_mdp_pipe {
 
 	struct mdp_overlay req_data;
 	u32 params_changed;
-	bool dirty;
 
 	struct mdss_mdp_pipe_smp_map smp_map[MAX_PLANES];
 
@@ -468,7 +438,6 @@ struct mdss_mdp_pipe {
 	struct mdp_scale_data scale;
 	u8 chroma_sample_h;
 	u8 chroma_sample_v;
-	u8 csc_coeff_set;
 };
 
 struct mdss_mdp_writeback_arg {
@@ -500,7 +469,6 @@ struct mdss_overlay_private {
 	struct mdss_mdp_data free_list[MAX_FREE_LIST_SIZE];
 	int free_list_size;
 	int ad_state;
-	int dyn_pu_state;
 
 	bool handoff;
 	u32 splash_mem_addr;
@@ -512,7 +480,6 @@ struct mdss_overlay_private {
 	struct work_struct retire_work;
 	int retire_cnt;
 	bool kickoff_released;
-	u32 cursor_ndx[2];
 };
 
 struct mdss_mdp_commit_cb {
@@ -532,29 +499,11 @@ enum mdss_screen_state {
 	MDSS_SCREEN_FORCE_BLANK,
 };
 
-#define mfd_to_mdp5_data(mfd) (mfd->mdp.private1)
-#define mfd_to_mdata(mfd) (((struct mdss_overlay_private *)\
-				(mfd->mdp.private1))->mdata)
-#define mfd_to_ctl(mfd) (((struct mdss_overlay_private *)\
-				(mfd->mdp.private1))->ctl)
-#define mfd_to_wb(mfd) (((struct mdss_overlay_private *)\
-				(mfd->mdp.private1))->wb)
-
 static inline struct mdss_mdp_ctl *mdss_mdp_get_split_ctl(
 	struct mdss_mdp_ctl *ctl)
 {
 	if (ctl && ctl->mixer_right && (ctl->mixer_right->ctl != ctl))
 		return ctl->mixer_right->ctl;
-
-	return NULL;
-}
-
-static inline struct mdss_mdp_ctl *mdss_mdp_get_main_ctl(
-	struct mdss_mdp_ctl *sctl)
-{
-	if (sctl && sctl->mfd && sctl->mixer_left &&
-		sctl->mixer_left->is_right_mixer)
-		return mfd_to_ctl(sctl->mfd);
 
 	return NULL;
 }
@@ -630,37 +579,6 @@ static inline int mdss_mdp_line_buffer_width(void)
 	return MAX_LINE_BUFFER_WIDTH;
 }
 
-static inline bool mdss_mdp_req_init_restore_cfg(struct mdss_data_type *mdata)
-{
-	if ((mdata->mdp_rev == MDSS_MDP_HW_REV_106) ||
-                (mdata->mdp_rev == MDSS_MDP_HW_REV_108))
-		return true;
-
-	return false;
-}
-
-static inline int mdss_mdp_panic_signal_support_mode(
-	struct mdss_data_type *mdata, struct mdss_mdp_pipe *pipe)
-{
-	uint32_t signal_mode = MDSS_MDP_PANIC_NONE;
-
-	if (pipe && pipe->mixer_left &&
-		pipe->mixer_left->type == MDSS_MDP_MIXER_TYPE_INTF) {
-		if (IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
-					MDSS_MDP_HW_REV_105) ||
-		    IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
-					MDSS_MDP_HW_REV_108) ||
-		    IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
-					MDSS_MDP_HW_REV_109))
-			signal_mode = MDSS_MDP_PANIC_COMMON_REG_CFG;
-		else if (IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
-					MDSS_MDP_HW_REV_107))
-			signal_mode = MDSS_MDP_PANIC_PER_PIPE_CFG;
-	}
-
-	return signal_mode;
-}
-
 static inline struct clk *mdss_mdp_get_clk(u32 clk_idx)
 {
 	if (clk_idx < MDSS_MAX_CLK)
@@ -668,87 +586,20 @@ static inline struct clk *mdss_mdp_get_clk(u32 clk_idx)
 	return NULL;
 }
 
-static inline void mdss_update_sd_client(struct mdss_data_type *mdata,
-							bool status)
+static inline int mdss_mdp_panic_signal_supported(
+	struct mdss_data_type *mdata, struct mdss_mdp_pipe *pipe)
 {
-	if (status)
-		atomic_inc(&mdata->sd_client_count);
-	else
-		atomic_add_unless(&mdss_res->sd_client_count, -1, 0);
-}
-
-static inline int mdss_mdp_get_wb_ctl_support(struct mdss_data_type *mdata,
-							bool rotator_session)
-{
-	/*
-	 * Initial control paths are used for primary and external
-	 * interfaces and remaining control paths are used for WB
-	 * interfaces.
-	 */
-	return rotator_session ? (mdata->nctl - mdata->nmixers_wb) :
-				(mdata->nctl - mdata->nwb);
-}
-
-static inline int mdss_mdp_get_pixel_ram_size(struct mdss_data_type *mdata)
-{
-	return (mdata->mdp_rev == MDSS_MDP_HW_REV_107) ?
-						MDSS_MDP_PIXEL_RAM_SIZE : 0;
-}
-
-static inline bool mdss_mdp_is_nrt_vbif_client(struct mdss_data_type *mdata,
-					struct mdss_mdp_pipe *pipe)
-{
-	return mdata->vbif_nrt_io.base && pipe->mixer_left &&
-			pipe->mixer_left->rotator_mode;
-}
-
-static inline bool mdss_mdp_is_nrt_ctl_path(struct mdss_mdp_ctl *ctl)
-{
-	return (ctl->intf_num ==  MDSS_MDP_NO_INTF ||
-		(ctl->mixer_left && ctl->mixer_left->rotator_mode));
-}
-
-static inline bool mdss_mdp_ctl_is_power_off(struct mdss_mdp_ctl *ctl)
-{
-	return mdss_panel_is_power_off(ctl->power_state);
-}
-
-static inline bool mdss_mdp_ctl_is_power_on_interactive(
-	struct mdss_mdp_ctl *ctl)
-{
-	return mdss_panel_is_power_on_interactive(ctl->power_state);
-}
-
-static inline bool mdss_mdp_ctl_is_power_on(struct mdss_mdp_ctl *ctl)
-{
-	return mdss_panel_is_power_on(ctl->power_state);
-}
-
-static inline bool mdss_mdp_ctl_is_power_on_lp(struct mdss_mdp_ctl *ctl)
-{
-	return mdss_panel_is_power_on_lp(ctl->power_state);
-}
-
-static inline u32 left_lm_w_from_mfd(struct msm_fb_data_type *mfd)
-{
-	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
-	return (ctl && ctl->mixer_left) ? ctl->mixer_left->width : 0;
-}
-
-static inline uint8_t pp_vig_csc_pipe_val(struct mdss_mdp_pipe *pipe)
-{
-	switch (pipe->csc_coeff_set) {
-	case MDP_CSC_ITU_R_601:
-		return MDSS_MDP_CSC_YUV2RGB_601L;
-	case MDP_CSC_ITU_R_601_FR:
-		return MDSS_MDP_CSC_YUV2RGB_601FR;
-	case MDP_CSC_ITU_R_709:
-	default:
-		return  MDSS_MDP_CSC_YUV2RGB_709L;
-	}
+	return ((IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
+					MDSS_MDP_HW_REV_105) ||
+		IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
+					MDSS_MDP_HW_REV_108)) &&
+		pipe->mixer_left &&
+		pipe->mixer_left->type == MDSS_MDP_MIXER_TYPE_INTF);
 }
 
 irqreturn_t mdss_mdp_isr(int irq, void *ptr);
+int mdss_iommu_attach(struct mdss_data_type *mdata);
+int mdss_iommu_dettach(struct mdss_data_type *mdata);
 void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 		u32 intr_type, u32 intf_num);
 int mdss_mdp_irq_enable(u32 intr_type, u32 intf_num);
@@ -761,18 +612,24 @@ int mdss_mdp_set_intr_callback(u32 intr_type, u32 intf_num,
 
 void mdss_mdp_footswitch_ctrl_splash(int on);
 void mdss_mdp_batfet_ctrl(struct mdss_data_type *mdata, int enable);
+int mdss_mdp_bus_scale_set_quota(u64 ab_quota_rt, u64 ab_quota_nrt,
+				u64 ib_quota);
 void mdss_mdp_set_clk_rate(unsigned long min_clk_rate);
 unsigned long mdss_mdp_get_clk_rate(u32 clk_idx);
 int mdss_mdp_vsync_clk_enable(int enable);
-void mdss_mdp_clk_ctrl(int enable);
+void mdss_mdp_clk_ctrl(int enable, int isr);
 struct mdss_data_type *mdss_mdp_get_mdata(void);
-int mdss_mdp_secure_display_ctrl(unsigned int enable);
 
 int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd);
 int mdss_mdp_overlay_req_check(struct msm_fb_data_type *mfd,
 			       struct mdp_overlay *req,
 			       struct mdss_mdp_format_params *fmt);
 int mdss_mdp_overlay_vsync_ctrl(struct msm_fb_data_type *mfd, int en);
+int mdss_mdp_overlay_get_buf(struct msm_fb_data_type *mfd,
+			     struct mdss_mdp_data *data,
+			     struct msmfb_data *planes,
+			     int num_planes,
+			     u32 flags);
 int mdss_mdp_overlay_pipe_setup(struct msm_fb_data_type *mfd,
 	struct mdp_overlay *req, struct mdss_mdp_pipe **ppipe,
 	struct mdss_mdp_pipe *left_blend_pipe, bool is_single_layer);
@@ -802,7 +659,7 @@ int mdss_mdp_ctl_split_display_setup(struct mdss_mdp_ctl *ctl,
 		struct mdss_panel_data *pdata);
 int mdss_mdp_ctl_destroy(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_ctl_start(struct mdss_mdp_ctl *ctl, bool handoff);
-int mdss_mdp_ctl_stop(struct mdss_mdp_ctl *ctl, int panel_power_mode);
+int mdss_mdp_ctl_stop(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_ctl_intf_event(struct mdss_mdp_ctl *ctl, int event, void *arg);
 int mdss_mdp_perf_bw_check(struct mdss_mdp_ctl *ctl,
 		struct mdss_mdp_pipe **left_plist, int left_cnt,
@@ -812,7 +669,7 @@ int mdss_mdp_perf_bw_check_pipe(struct mdss_mdp_perf_params *perf,
 int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 	struct mdss_mdp_perf_params *perf, struct mdss_rect *roi,
 	u32 flags);
-u32 mdss_mdp_calc_latency_buf_bytes(bool is_bwc,
+u32 mdss_mdp_calc_latency_buf_bytes(bool is_yuv, bool is_bwc,
 	bool is_tile, u32 src_w, u32 bpp, bool use_latency_buf_percentage,
 	u32 smp_bytes);
 u32 mdss_mdp_get_mdp_clk_rate(struct mdss_data_type *mdata);
@@ -848,13 +705,12 @@ int mdss_mdp_display_wait4pingpong(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_display_wakeup_time(struct mdss_mdp_ctl *ctl,
 				 ktime_t *wakeup_time);
 
-int mdss_mdp_csc_setup(u32 block, u32 blk_idx, u32 csc_type);
-int mdss_mdp_csc_setup_data(u32 block, u32 blk_idx, struct mdp_csc_cfg *data);
+int mdss_mdp_csc_setup(u32 block, u32 blk_idx, u32 tbl_idx, u32 csc_type);
+int mdss_mdp_csc_setup_data(u32 block, u32 blk_idx, u32 tbl_idx,
+				   struct mdp_csc_cfg *data);
 
 int mdss_mdp_pp_init(struct device *dev);
 void mdss_mdp_pp_term(struct device *dev);
-int mdss_mdp_pp_override_pu(int enable);
-int mdss_mdp_pp_overlay_init(struct msm_fb_data_type *mfd);
 
 int mdss_mdp_pp_resume(struct mdss_mdp_ctl *ctl, u32 mixer_num);
 
@@ -906,7 +762,7 @@ void mdss_mdp_pipe_unmap(struct mdss_mdp_pipe *pipe);
 struct mdss_mdp_pipe *mdss_mdp_pipe_alloc_dma(struct mdss_mdp_mixer *mixer);
 
 u32 mdss_mdp_smp_calc_num_blocks(struct mdss_mdp_pipe *pipe);
-u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe, u32 num_planes);
+u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe);
 int mdss_mdp_smp_reserve(struct mdss_mdp_pipe *pipe);
 void mdss_mdp_smp_unreserve(struct mdss_mdp_pipe *pipe);
 void mdss_mdp_smp_release(struct mdss_mdp_pipe *pipe);
@@ -935,11 +791,9 @@ int mdss_mdp_get_rau_strides(u32 w, u32 h, struct mdss_mdp_format_params *fmt,
 void mdss_mdp_data_calc_offset(struct mdss_mdp_data *data, u16 x, u16 y,
 	struct mdss_mdp_plane_sizes *ps, struct mdss_mdp_format_params *fmt);
 struct mdss_mdp_format_params *mdss_mdp_get_format_params(u32 format);
-int mdss_mdp_data_get(struct mdss_mdp_data *data, struct msmfb_data *planes,
-		int num_planes, u32 flags);
-int mdss_mdp_data_map(struct mdss_mdp_data *data);
-void mdss_mdp_data_free(struct mdss_mdp_data *data);
-
+int mdss_mdp_put_img(struct mdss_mdp_img_data *data);
+int mdss_mdp_get_img(struct msmfb_data *img, struct mdss_mdp_img_data *data);
+int mdss_mdp_overlay_free_buf(struct mdss_mdp_data *data);
 u32 mdss_get_panel_framerate(struct msm_fb_data_type *mfd);
 int mdss_mdp_calc_phase_step(u32 src, u32 dst, u32 *out_phase);
 void mdss_mdp_intersect_rect(struct mdss_rect *res_rect,
@@ -950,8 +804,7 @@ void mdss_mdp_crop_rect(struct mdss_rect *src_rect,
 	const struct mdss_rect *sci_rect);
 
 
-int mdss_mdp_wb_kickoff(struct msm_fb_data_type *mfd,
-		struct mdss_mdp_commit_cb *commit_cb);
+int mdss_mdp_wb_kickoff(struct msm_fb_data_type *mfd);
 int mdss_mdp_wb_ioctl_handler(struct msm_fb_data_type *mfd, u32 cmd, void *arg);
 
 int mdss_mdp_get_ctl_mixers(u32 fb_num, u32 *mixer_id);
@@ -979,8 +832,19 @@ int mdss_mdp_wb_get_format(struct msm_fb_data_type *mfd,
 int mdss_mdp_pipe_program_pixel_extn(struct mdss_mdp_pipe *pipe);
 int mdss_mdp_wb_set_secure(struct msm_fb_data_type *mfd, int enable);
 int mdss_mdp_wb_get_secure(struct msm_fb_data_type *mfd, uint8_t *enable);
-void mdss_mdp_ctl_restore(void);
-int  mdss_mdp_ctl_reset(struct mdss_mdp_ctl *ctl);
-int mdss_mdp_user_pcc_config(struct mdp_pcc_cfg_data *config);
+void mdss_mdp_ctl_restore(struct mdss_mdp_ctl *ctl);
+int mdss_mdp_footswitch_ctrl_idle_pc(int on, struct device *dev);
 
+#define mfd_to_mdp5_data(mfd) (mfd->mdp.private1)
+#define mfd_to_mdata(mfd) (((struct mdss_overlay_private *)\
+				(mfd->mdp.private1))->mdata)
+#define mfd_to_ctl(mfd) (((struct mdss_overlay_private *)\
+				(mfd->mdp.private1))->ctl)
+#define mfd_to_wb(mfd) (((struct mdss_overlay_private *)\
+				(mfd->mdp.private1))->wb)
+
+int  mdss_mdp_ctl_reset(struct mdss_mdp_ctl *ctl);
+#ifdef CONFIG_HUAWEI_LCD
+void mdss_dsi_status_check_ctl(struct msm_fb_data_type *mfd, int sheduled);
+#endif
 #endif /* MDSS_MDP_H */

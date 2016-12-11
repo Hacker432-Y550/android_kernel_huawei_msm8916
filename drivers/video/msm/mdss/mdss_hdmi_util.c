@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014,2016 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,7 +12,7 @@
  */
 
 #include <linux/io.h>
-#include <linux/delay.h>
+#include <mach/board.h>
 #include "mdss_hdmi_util.h"
 
 static struct msm_hdmi_mode_timing_info
@@ -129,7 +129,7 @@ void hdmi_setup_video_mode_lut(void)
 		hdmi_supported_video_mode_lut, MSM_HDMI_MODES_DVI);
 } /* hdmi_setup_video_mode_lut */
 
-static const char *hdmi_get_single_video_3d_fmt_2string(u32 format)
+const char *hdmi_get_single_video_3d_fmt_2string(u32 format)
 {
 	switch (format) {
 	case TOP_AND_BOTTOM:	return "TAB";
@@ -178,7 +178,7 @@ static void hdmi_ddc_print_data(struct hdmi_tx_ddc_data *ddc_data,
 		return;
 	}
 
-	DEV_DBG("%s: buf=%pK, d_len=0x%x, d_addr=0x%x, no_align=%d\n",
+	DEV_DBG("%s: buf=%p, d_len=0x%x, d_addr=0x%x, no_align=%d\n",
 		caller, ddc_data->data_buf, ddc_data->data_len,
 		ddc_data->dev_addr, ddc_data->no_align);
 	DEV_DBG("%s: offset=0x%x, req_len=0x%x, retry=%d, what=%s\n",
