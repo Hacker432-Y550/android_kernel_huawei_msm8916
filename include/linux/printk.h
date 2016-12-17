@@ -405,4 +405,6 @@ static inline void oops_printk_start(void)
 }
 #endif
 
+extern int KERNEL_HWFLOW;
+
 #endif

@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include <linux/unistd.h>
 #include <linux/hw_lcd_common.h>
+#include "hw_lcd_debug.h"
 
 /* define macro */
 #define DCS_STR ("dcs_")

@@ -68,18 +68,76 @@
 #include<linux/module.h>
 
 #include <linux/hw_lcd_common.h>
-#include "mdss_dsi.h"
+#include <mdss_dsi.h>
 #include <linux/of.h>
 #include "mdss_panel.h"
+#include <linux/sched.h>
+#include <asm/setup.h>
 struct dsm_client *lcd_dclient = NULL;
 
 
 #ifdef CONFIG_DEBUG_FS
 /* whether print log or not */
 #define LCD_MIPI_DEBUG_ON    (1)
-
+static int g_tp_gesture_enable_status = false;
 static struct mdss_dsi_ctrl_pdata *g_lcd_dbg_dsi_ctrl_pdata = NULL;    // global mdss_dsi_ctrl_pdata
 
+/*
+*merge qcom patch from 02098626: 08_20_patches.zip
+*add delay time before vddio-incell enable. if vddio-incell pull down time is smaller then 80ms.
+*/
+static unsigned long vddio_incell_poweroff_time = 0;
+
+/* FPC unlock can't light lcd backlight */
+static int lcd_power_delay_time = false;
+/* Difference synchronization to 8939-FEIMA-M-GP between LCD module 8939-L-GP and 8939-FEIMA-M-GP . */
+/*open tp gesture can't wake up screen probability*/
+static bool tp_reset_enable = false;
+unsigned long get_tp_vddio_poweroff_time(void)
+{
+	return vddio_incell_poweroff_time;
+}
+void set_tp_vddio_poweroff_time(unsigned long jz)
+{
+	vddio_incell_poweroff_time = jz;
+}
+
+/* get tp_gesture_enable or not */
+int get_tp_gesture_enable_status(void)
+{
+	return g_tp_gesture_enable_status;
+}
+/*tp_gesture_enable:drivers use to set tp_gesture_enable*/
+void set_tp_gesture_enable_status(int type)
+{
+	g_tp_gesture_enable_status = type;
+	LCD_LOG_INFO("%s:tp_type=%d\n",__func__,type);
+}
+
+/* FPC unlock can't light lcd backlight */
+/* get lcd power delay time */
+int get_lcd_power_delay_time(void)
+{
+	return lcd_power_delay_time;
+}
+/* set lcd power delay time */
+void set_lcd_power_delay_time(int delay_timeValue)
+{
+	lcd_power_delay_time = delay_timeValue;
+	LCD_LOG_INFO("%s:lcd power delay time is : %d\n",__func__,delay_timeValue);
+}
+/* Difference synchronization to 8939-FEIMA-M-GP between LCD module 8939-L-GP and 8939-FEIMA-M-GP . */
+/*open tp gesture can't wake up screen probability*/
+/*get lcd module tp reset configcon*/
+bool get_tp_reset_enable(void)
+{
+	return tp_reset_enable;
+}
+/*set lcd module tp reset configcon*/
+void set_tp_reset_status(bool ath_tp_reset)
+{
+	tp_reset_enable = ath_tp_reset;
+}
 /* set global ctrl_pdata pointer */
 void lcd_dbg_set_dsi_ctrl_pdata(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -323,44 +381,52 @@ int lcd_dbg_mipi_prcess_ic_reg(int op_type,int reg, int cmd_type, int param_num,
 	return 0;
 }
 #endif
-int mdss_record_dsm_err(struct mdss_dsi_ctrl_pdata *ctrl, struct dsm_client *lcd_dclient)
+#ifdef CONFIG_HUAWEI_DSM
+int mdss_record_dsm_err(u32 *dsi_status)
 {
-	u32 status;
-	unsigned char *base;
+	if( NULL == lcd_dclient )
+	{
+		LCD_LOG_ERR("%s: there is no lcd_dclient!\n", __func__);
+		return -1;
+	}
+
+	/* try to get permission to use the buffer */
+	if(dsm_client_ocuppy(lcd_dclient))
+	{
+		/* buffer is busy */
+		LCD_LOG_ERR("%s: buffer is busy!\n", __func__);
+		return -1;
+	}
 
 	LCD_LOG_INFO("%s: entry!\n", __func__);
-	base = ctrl->ctrl_base;
+	if (dsi_status[0])
+		dsm_client_record(lcd_dclient, "DSI_ACK_ERR_STATUS is wrong ,err number :%x\n", dsi_status[0]);
 
-	status = MIPI_INP(base + 0x0068);/* DSI_ACK_ERR_STATUS */
-	if (status)
-		dsm_client_record(lcd_dclient, "DSI_ACK_ERR_STATUS is wrong ,err number :%x\n", status);
+	if (dsi_status[1] & 0x0111)
+		dsm_client_record(lcd_dclient, "DSI_TIMEOUT_STATUS is wrong ,err number :%x\n", dsi_status[1]);
 
-	status = MIPI_INP(base + 0x00c0);/* DSI_TIMEOUT_STATUS */
-	if (status & 0x0111)
-		dsm_client_record(lcd_dclient, "DSI_TIMEOUT_STATUS is wrong ,err number :%x\n", status);
+	if (dsi_status[2] & 0x011111)
+		dsm_client_record(lcd_dclient, "DSI_DLN0_PHY_ERR is wrong ,err number :%x\n", dsi_status[2]);
 
-	status = MIPI_INP(base + 0x00b4);/* DSI_DLN0_PHY_ERR */
-	if (status & 0x011111)
-		dsm_client_record(lcd_dclient, "DSI_DLN0_PHY_ERR is wrong ,err number :%x\n", status);
+	if (dsi_status[3] & 0xcccc4489) 
+		dsm_client_record(lcd_dclient, "DSI_FIFO_STATUS is wrong ,err number :%x\n", dsi_status[3]);
 
-	status = MIPI_INP(base + 0x000c);/* DSI_FIFO_STATUS */
-	if (status & 0xcccc4489) 
-		dsm_client_record(lcd_dclient, "DSI_FIFO_STATUS is wrong ,err number :%x\n", status);
+	if (dsi_status[4] & 0x80000000) 
+		dsm_client_record(lcd_dclient, "DSI_STATUS is wrong ,err number :%x\n", dsi_status[4]);
 
-	status = MIPI_INP(base + 0x0008);/* DSI_STATUS */
-	if (status & 0x80000000) 
-		dsm_client_record(lcd_dclient, "DSI_STATUS is wrong ,err number :%x\n", status);
+	dsm_client_notify(lcd_dclient, DSM_LCD_MDSS_DSI_ISR_ERROR_NO);
 
 	return 0;
 }
 
-int lcd_report_dsm_err(struct mdss_dsi_ctrl_pdata *ctrl, int type, int err_value,int add_value)
+int lcd_report_dsm_err(int type, int err_value,int add_value)
 {
-	/* we will ignore lcd error 20100 for 0x51 */
+    
 	if ((DSM_LCD_MIPI_ERROR_NO == type && 0x51 == add_value)|| DSM_LCD_MDSS_DSI_ISR_ERROR_NO == type)
 	{
 		return 0;
 	}
+
 	LCD_LOG_INFO("%s: entry! type:%d\n", __func__, type);
 
 
@@ -394,8 +460,35 @@ int lcd_report_dsm_err(struct mdss_dsi_ctrl_pdata *ctrl, int type, int err_value
 		case DSM_LCD_ESD_REBOOT_ERROR_NO:
 			dsm_client_record(lcd_dclient, "LCD RESET register %x read data =%x\n", add_value, err_value );
 			break;
-		case DSM_LCD_MDSS_DSI_ISR_ERROR_NO:
-			mdss_record_dsm_err(ctrl, lcd_dclient);
+		case DSM_LCD_MDSS_IOMMU_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss iommu attach/detach or map memory fail (%d)\n", err_value);
+			break;
+		case DSM_LCD_MDSS_PIPE_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss pipe status error (%d)\n",err_value);
+			break;
+		case DSM_LCD_MDSS_PINGPONG_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss wait pingpong time out (%d)\n",err_value);
+			break;
+		case DSM_LCD_MDSS_VSP_ERROR_NO:
+			dsm_client_record(lcd_dclient, "get vsp/vsn(%d) register fail (%d) \n", add_value, err_value);
+			break;
+		case DSM_LCD_MDSS_ROTATOR_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss rotator queue fail (%d) \n",err_value);
+			break;
+		case DSM_LCD_MDSS_FENCE_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss sync_fence_wait fail (%d) \n", err_value);
+			break;
+		case DSM_LCD_MDSS_CMD_STOP_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss stop cmd time out (%d) \n", err_value);
+			break;
+		case DSM_LCD_MDSS_VIDEO_DISPLAY_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss commit without wait! ctl=%d", err_value);
+			break;
+		case DSM_LCD_MDSS_MDP_CLK_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss mdp clk can't be turned off\n", err_value);
+			break;
+		case DSM_LCD_MDSS_MDP_BUSY_ERROR_NO:
+			dsm_client_record(lcd_dclient, "mdss mdp dma tx time out (%d)\n", err_value);
 			break;
 		default:
 			break;
@@ -413,31 +506,44 @@ int lcd_report_dsm_err(struct mdss_dsi_ctrl_pdata *ctrl, int type, int err_value
 *bit 3  set backlgiht
 */
 /*if did the operation the bit will be set to 1 or the bit is 0*/
+/*add power status error judge,avoid red screen*/
 void lcd_dcm_pwr_status_handler(unsigned long data)
 {
-	if(lcd_pwr_status.lcd_dcm_pwr_status != LCD_PWR_STAT_GOOD)
-	{
-		dsm_client_record(lcd_dclient, "lcd power status wrong, value :%x\n",lcd_pwr_status.lcd_dcm_pwr_status);
-		
-		dsm_client_record(lcd_dclient, "lcd power status :bit 0  do unblank\n");
-		dsm_client_record(lcd_dclient, "lcd power status :bit 1  lcd on\n");
-		dsm_client_record(lcd_dclient, "lcd power status :bit 2  set frame\n");
-		dsm_client_record(lcd_dclient, "lcd power status :bit 3  set backlgiht\n");
-		
-		dsm_client_record(lcd_dclient, "lcd power status :if did the operation the bit will be set to 1 or the bit is 0\n");
-		dsm_client_record(lcd_dclient,"unblank at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_unblank.tm_year + 1900,lcd_pwr_status.tm_unblank.tm_mon+1,
-						lcd_pwr_status.tm_unblank.tm_mday,lcd_pwr_status.tm_unblank.tm_hour,lcd_pwr_status.tm_unblank.tm_min,lcd_pwr_status.tm_unblank.tm_sec,lcd_pwr_status.tvl_unblank.tv_usec%1000);
-		dsm_client_record(lcd_dclient,"lcd on at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_lcd_on.tm_year + 1900,lcd_pwr_status.tm_lcd_on.tm_mon+1,
-						lcd_pwr_status.tm_lcd_on.tm_mday,lcd_pwr_status.tm_lcd_on.tm_hour,lcd_pwr_status.tm_lcd_on.tm_min,lcd_pwr_status.tm_lcd_on.tm_sec,lcd_pwr_status.tvl_lcd_on.tv_usec%1000);
-		dsm_client_record(lcd_dclient,"set frame at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_set_frame.tm_year + 1900,lcd_pwr_status.tm_set_frame.tm_mon+1,
-						lcd_pwr_status.tm_set_frame.tm_mday,lcd_pwr_status.tm_set_frame.tm_hour,lcd_pwr_status.tm_set_frame.tm_min,lcd_pwr_status.tm_set_frame.tm_sec,lcd_pwr_status.tvl_set_frame.tv_usec%1000);
-		dsm_client_record(lcd_dclient,"set backlight at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_backlight.tm_year + 1900,lcd_pwr_status.tm_backlight.tm_mon+1,
-						lcd_pwr_status.tm_backlight.tm_mday,lcd_pwr_status.tm_backlight.tm_hour,lcd_pwr_status.tm_backlight.tm_min,lcd_pwr_status.tm_backlight.tm_sec,lcd_pwr_status.tvl_backlight.tv_usec%1000);
-		
-		dsm_client_notify(lcd_dclient, DSM_LCD_POWER_STATUS_ERROR_NO);
+	/*Not in factory mode will report this dsm log*/
+	if( !is_runmode_factory() ) {
+	/*optimize 20110 report strategy for device monitor.*/
+		if((lcd_pwr_status.lcd_dcm_pwr_status != LCD_PWR_STAT_GOOD)&&(lcd_pwr_status.lcd_dcm_pwr_status != LCD_PWR_STAT_IS_GOOD))
+		{
+			dsm_client_record(lcd_dclient, "lcd power status wrong, value :%x\n",lcd_pwr_status.lcd_dcm_pwr_status);
+			
+			dsm_client_record(lcd_dclient, "lcd power status :bit 0  do unblank\n");
+			dsm_client_record(lcd_dclient, "lcd power status :bit 1  lcd on\n");
+			dsm_client_record(lcd_dclient, "lcd power status :bit 2  set frame\n");
+			dsm_client_record(lcd_dclient, "lcd power status :bit 3  set backlgiht\n");
+			
+			dsm_client_record(lcd_dclient, "lcd power status :if did the operation the bit will be set to 1 or the bit is 0\n");
+			dsm_client_record(lcd_dclient,"unblank at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_unblank.tm_year + 1900,lcd_pwr_status.tm_unblank.tm_mon+1,
+							lcd_pwr_status.tm_unblank.tm_mday,lcd_pwr_status.tm_unblank.tm_hour,lcd_pwr_status.tm_unblank.tm_min,lcd_pwr_status.tm_unblank.tm_sec,lcd_pwr_status.tvl_unblank.tv_usec%1000);
+			dsm_client_record(lcd_dclient,"lcd on at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_lcd_on.tm_year + 1900,lcd_pwr_status.tm_lcd_on.tm_mon+1,
+							lcd_pwr_status.tm_lcd_on.tm_mday,lcd_pwr_status.tm_lcd_on.tm_hour,lcd_pwr_status.tm_lcd_on.tm_min,lcd_pwr_status.tm_lcd_on.tm_sec,lcd_pwr_status.tvl_lcd_on.tv_usec%1000);
+			dsm_client_record(lcd_dclient,"set frame at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_set_frame.tm_year + 1900,lcd_pwr_status.tm_set_frame.tm_mon+1,
+							lcd_pwr_status.tm_set_frame.tm_mday,lcd_pwr_status.tm_set_frame.tm_hour,lcd_pwr_status.tm_set_frame.tm_min,lcd_pwr_status.tm_set_frame.tm_sec,lcd_pwr_status.tvl_set_frame.tv_usec%1000);
+			dsm_client_record(lcd_dclient,"set backlight at [%d-%d-%d]%d:%d:%d:%d\n",lcd_pwr_status.tm_backlight.tm_year + 1900,lcd_pwr_status.tm_backlight.tm_mon+1,
+							lcd_pwr_status.tm_backlight.tm_mday,lcd_pwr_status.tm_backlight.tm_hour,lcd_pwr_status.tm_backlight.tm_min,lcd_pwr_status.tm_backlight.tm_sec,lcd_pwr_status.tvl_backlight.tv_usec%1000);
+			
+			dsm_client_notify(lcd_dclient, DSM_LCD_POWER_STATUS_ERROR_NO);
+
+			show_state_filter(TASK_UNINTERRUPTIBLE);
+		}
+	} else {
+		/*in factory mode do not report this dsm log,just print a log for locate*/
+		LCD_LOG_INFO("[%s] in factory mode ignore log of 20110\n",__func__);
 	}
+	lcd_pwr_status.lcd_dcm_pwr_status = 0;
 }
-void mdp_underrun_dsm_report(unsigned long num,unsigned long underrun_cnt,int cpu_freq,unsigned long mdp_clk_rate,unsigned long clk_axi,unsigned long clk_ahb)
+/*reomve cpufreq_get() call to avoid crash as schedule in irq */
+/*delete mdss_mdp_get_clk_rate() to avoid panic*/
+void mdp_underrun_dsm_report(unsigned long num,unsigned long underrun_cnt)
 {
 	/* try to get permission to use the buffer */
 	if(dsm_client_ocuppy(lcd_dclient))
@@ -446,7 +552,24 @@ void mdp_underrun_dsm_report(unsigned long num,unsigned long underrun_cnt,int cp
 		LCD_LOG_ERR("%s: buffer is busy!\n", __func__);
 		return;
 	}
-	dsm_client_record(lcd_dclient, "Lcd underrun detected for ctl=%d,count=%d,cpu0_freq=%d,mdp_clk_rate=%d,clk_axi=%d,clk_ahb=%d \n"      \
-		,num,underrun_cnt,cpu_freq,(unsigned int)mdp_clk_rate,(unsigned int)clk_axi,(unsigned int)clk_ahb);
+	dsm_client_record(lcd_dclient, "Lcd underrun detected for ctl=%d,count=%d\n",num,underrun_cnt);
 	dsm_client_notify(lcd_dclient, DSM_LCD_MDSS_UNDERRUN_ERROR_NO);
 }
+#else
+int mdss_record_dsm_err(u32 *dsi_status)
+{
+	return 0;
+}
+int lcd_report_dsm_err(int type, int err_value,int add_value)
+{
+	return 0;
+}
+void lcd_dcm_pwr_status_handler(unsigned long data)
+{
+
+}
+void mdp_underrun_dsm_report(unsigned long num,unsigned long underrun_cnt)
+{
+
+}
+#endif

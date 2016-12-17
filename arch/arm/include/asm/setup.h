@@ -16,6 +16,11 @@
 
 #include <uapi/asm/setup.h>
 
+/* runmode : factory , normal */
+//#define ATAG_RUNMODE_FLAG  0x54410102
+
+extern bool is_runmode_factory(void);
+
 
 #define __tag __used __attribute__((__section__(".taglist.init")))
 #define __tagtable(tag, fn) \
